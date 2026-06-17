@@ -1,0 +1,5 @@
+{
+  "name": "target-repo",
+  "type": "module",
+  "scripts": { "test": "node --test" }
+}

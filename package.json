@@ -1,0 +1,20 @@
+{
+  "name": "eve-github-implementer-bot",
+  "version": "1.0.0",
+  "description": "An autonomous GitHub issue implementer built on Eve: reads an issue, writes and tests code in a sandbox, and opens a PR after human approval.",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "dev": "eve dev",
+    "build": "eve build",
+    "start": "eve start",
+    "info": "eve info"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.85",
+    "ai": "^7.0.0-beta.178",
+    "eve": "^0.11.3",
+    "zod": "^4.4.3"
+  }
+}

@@ -1,0 +1,92 @@
+# GitHub Actions workflow — "label an issue → Eve implements it"
+#
+# Trigger: add the "eve-implement" label to any issue.
+# This drives the deployed Eve agent's HTTP session API, passing the
+# event context and a GITHUB_TOKEN so the bot can clone, fix, test, and PR.
+#
+# SETUP REQUIRED:
+#   1. Deploy the Eve agent and capture its URL.
+#   2. Set these repository secrets:
+#        EVE_AGENT_URL        — https://<deployment>.vercel.app
+#        EVE_BASIC_PASSWORD   — the ROUTE_AUTH_BASIC_PASSWORD used at deploy time
+#        EVE_IMPL_GH_TOKEN    — a fine-grained PAT with repo read+write on the target repo
+#
+# The workflow calls POST /eve/v1/session (authenticated via HTTP Basic),
+# polls until the session reaches "input.requested" (approval gate), then
+# automatically approves so CI can run without human intervention.
+# Adapt the approval logic to suit your team's review process.
+
+name: eve-implement
+
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  implement:
+    if: github.event.label.name == 'eve-implement'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Start Eve implementation session
+        id: start_session
+        run: |
+          RESPONSE=$(curl -sf -u "operator:${{ secrets.EVE_BASIC_PASSWORD }}" \
+            -X POST "${{ secrets.EVE_AGENT_URL }}/eve/v1/session" \
+            -H "Content-Type: application/json" \
+            -d "{\"message\": \"Implement GitHub issue #${{ github.event.issue.number }} in ${{ github.repository }}. Owner: ${{ github.repository_owner }}, repo: ${{ github.event.repository.name }}, issue_number: ${{ github.event.issue.number }}\"}")
+          SESSION_ID=$(echo "$RESPONSE" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).sessionId))")
+          echo "session_id=$SESSION_ID" >> "$GITHUB_OUTPUT"
+          echo "Started Eve session: $SESSION_ID"
+
+      - name: Stream session and wait for approval gate
+        id: wait_approval
+        env:
+          SESSION_ID: ${{ steps.start_session.outputs.session_id }}
+          EVE_AGENT_URL: ${{ secrets.EVE_AGENT_URL }}
+          EVE_BASIC_PASSWORD: ${{ secrets.EVE_BASIC_PASSWORD }}
+        run: |
+          # Stream NDJSON events until input.requested appears
+          STREAM=$(curl -sf -u "operator:$EVE_BASIC_PASSWORD" \
+            "$EVE_AGENT_URL/eve/v1/session/$SESSION_ID/stream")
+          echo "$STREAM"
+          # Extract input request id
+          INPUT_ID=$(echo "$STREAM" | node -e "
+            let d='';process.stdin.on('data',c=>d+=c);
+            process.stdin.on('end',()=>{
+              const lines=d.trim().split('\n');
+              for(const l of lines){
+                try{
+                  const e=JSON.parse(l);
+                  if(e.type==='input.requested'&&e.options){
+                    const a=e.options.find(o=>o.id==='approve');
+                    if(a){console.log(e.requestId||e.id);process.exit(0);}
+                  }
+                }catch{}
+              }
+              process.exit(1);
+            });
+          " || echo "no_approval_needed")
+          echo "input_id=$INPUT_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Approve pull-request opening
+        if: steps.wait_approval.outputs.input_id != 'no_approval_needed'
+        env:
+          SESSION_ID: ${{ steps.start_session.outputs.session_id }}
+          INPUT_ID: ${{ steps.wait_approval.outputs.input_id }}
+          EVE_AGENT_URL: ${{ secrets.EVE_AGENT_URL }}
+          EVE_BASIC_PASSWORD: ${{ secrets.EVE_BASIC_PASSWORD }}
+        run: |
+          curl -sf -u "operator:$EVE_BASIC_PASSWORD" \
+            -X POST "$EVE_AGENT_URL/eve/v1/session/$SESSION_ID/continue" \
+            -H "Content-Type: application/json" \
+            -d "{\"inputResponses\":[{\"requestId\":\"$INPUT_ID\",\"optionId\":\"approve\"}]}"
+          echo "Approved PR opening"
+
+      - name: Verify PR created
+        env:
+          GH_TOKEN: ${{ secrets.EVE_IMPL_GH_TOKEN }}
+        run: |
+          sleep 10
+          gh pr list --repo "${{ github.repository }}" --state open --json number,title,url
