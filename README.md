@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./assets/banner.png" alt="Eve GitHub Implementer Bot" width="100%">
+</p>
+
 # 🤖 Eve GitHub Implementer Bot
 
 An autonomous **issue-to-PR implementer** built on [Eve](https://github.com/vercel/eve), Vercel's open-source, filesystem-first agent framework. Give it a GitHub issue and it reads the requirement, **writes the code and runs the tests in an isolated sandbox until they pass**, then — after **human approval** — opens a real pull request that closes the issue.
