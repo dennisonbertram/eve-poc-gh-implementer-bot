@@ -1,9 +1,7 @@
 /**
  * Add two numbers.
- * TODO: implement this function
+ * TODO: implement this function — currently throws "not implemented"
  */
-function add(a, b) {
+export function add(a, b) {
   throw new Error("not implemented");
 }
-
-module.exports = { add };
